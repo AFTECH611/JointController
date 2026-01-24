@@ -56,9 +56,6 @@ class SpiDevice : public spi_manager::SpiNode {
   virtual spi_manager::CanFrame& GetRecvBuf() override { return recv_buf_; }
 
   // Configuration
-  virtual uint32_t BuildCanId(uint8_t motor_id, uint8_t cmd_type, const uint8_t* data = nullptr);
-  uint8_t current_motor_id_ = 0;  // Track which motor is being controlled
-  uint8_t current_cmd_type_ = 0;
   void SetSpeed(uint32_t speed_hz) { speed_hz_ = speed_hz; }
   void SetMode(uint8_t mode) { mode_ = mode; }
 

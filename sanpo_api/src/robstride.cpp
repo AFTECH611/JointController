@@ -37,32 +37,32 @@ void Robstride::RequestState(ActuatorState state) {
 }
 
 bool Robstride::Enable() {
-  // std::lock_guard<std::mutex> lock(data_mutex_);
-  //    cmd_type_ = ROBSTRIDE_ENABLE_CMD;
-  //    need_send_ = true;
+  can_id_ =
+      (ActuatorCommunicationType::TYPE_MOTOR_ENABLE << 24) | (master_id_ << 8) | id_;
+  can_id_ |= 0x80000000;  // Set RTR bit for extended ID
+  memset(send_buf_, 0, ACTUATOR_FRAME_SIZE);
   LOG_INFO("Motor %s enable command sent", name_.c_str());
   return true;
 }
 
 bool Robstride::Disable() {
-  // std::lock_guard<std::mutex> lock(data_mutex_);
-  //    cmd_type_ = ROBSTRIDE_RESET_CMD;
-  //    need_send_ = true;
+  uint8_t clear_error = 0;
+  can_id_ =
+      (ActuatorCommunicationType::TYPE_MOTOR_ENABLE << 24) | (master_id_ << 8) | id_;
+  can_id_ |= 0x80000000;  // Set RTR bit for extended ID
+  memset(send_buf_, 0, ACTUATOR_FRAME_SIZE);
+  send_buf_[0] = clear_error;
   LOG_INFO("Motor %s disable command sent", name_.c_str());
   return true;
 }
 
-bool Robstride::Reset() {
-  // std::lock_guard<std::mutex> lock(data_mutex_);
-  //    cmd_type_ = ROBSTRIDE_RESET_CMD;
-  //    need_send_ = true;
-  return true;
-}
-
 bool Robstride::SetZero() {
-  // std::lock_guard<std::mutex> lock(data_mutex_);
-  //    cmd_type_ = ROBSTRIDE_ZERO_CMD;
-  //    need_send_ = true;
+  can_id_ =
+      (ActuatorCommunicationType::TYPE_SET_POS_ZERO << 24) | (master_id_ << 8) | id_;
+  can_id_ |= 0x80000000;  // Set RTR bit for extended ID
+  memset(send_buf_, 0, ACTUATOR_FRAME_SIZE);
+  send_buf_[0] = 1;  // Command to set current position as zero
+  LOG_INFO("Motor %s set zero position command sent", name_.c_str());
   return true;
 }
 
@@ -75,9 +75,8 @@ void Robstride::SetTorque(float cur) {
 }
 
 float Robstride::GetTorque() {
-  // std::lock_guard<std::mutex> lock(data_mutex_);
-  //    return feedback_torque_;
-  return 0.0f;
+  uint16_t toq = (recv_buf_[3] & 0xF) << 8 | recv_buf_[4];
+  return MitUintToFloat(toq, mit_param_.toq_min, mit_param_.toq_max, 12);
 }
 
 void Robstride::SetVelocity(float vel) {
@@ -88,9 +87,8 @@ void Robstride::SetVelocity(float vel) {
 }
 
 float Robstride::GetVelocity() {
-  // std::lock_guard<std::mutex> lock(data_mutex_);
-  //    return feedback_velocity_;
-  return 0.0f;
+  uint16_t vel = recv_buf_[2] << 4 | recv_buf_[3] >> 4;
+  return MitUintToFloat(vel, mit_param_.vel_min, mit_param_.vel_max, 12);
 }
 
 void Robstride::SetPosition(float pos) {
@@ -101,41 +99,15 @@ void Robstride::SetPosition(float pos) {
 }
 
 float Robstride::GetPosition() {
-  // std::lock_guard<std::mutex> lock(data_mutex_);
-  //    return feedback_position_;
-  return 0.0f;
-}
-
-void Robstride::Set_Robstride_Motor_Parameter(uint16_t Index, float Value,
-                                              ActuatorControlMode SET_MODE) {
-  send_buf_[0] = Index;
-  send_buf_[1] = Index >> 8;
-  send_buf_[2] = 0x00;
-  send_buf_[3] = 0x00;
-
-  if (SET_MODE == 'p') {
-    memcpy(&send_buf_[4], &Value, 4);
-  } else if (SET_MODE == 'j') {
-    // Motor_Set_All.set_motor_mode = int(Value);
-    send_buf_[4] = (uint8_t)Value;
-    send_buf_[5] = 0x00;
-    send_buf_[6] = 0x00;
-    send_buf_[7] = 0x00;
-  }
-}
-
-void Robstride::Get_Robstride_Motor_Parameter(uint16_t Index) {
-  send_buf_[0] = Index;
-  send_buf_[1] = Index >> 8;
-  send_buf_[2] = 0x00;
-  send_buf_[3] = 0x00;
-  send_buf_[4] = 0x00;
-  send_buf_[5] = 0x00;
-  send_buf_[6] = 0x00;
-  send_buf_[7] = 0x00;
+  uint16_t pos = recv_buf_[0] << 8 | recv_buf_[1];
+  return MitUintToFloat(pos, mit_param_.pos_min, mit_param_.pos_max, 16);
 }
 
 void Robstride::SetMitCmd(float pos, float vel, float toq, float kp, float kd) {
+  can_id_ = (ActuatorCommunicationType::TYPE_MOTION_CONTROL << 24) |
+                      (MitFloatToUint(toq, mit_param_.toq_min, mit_param_.toq_max, 16) << 8) | id_;
+  can_id_ |= 0x80000000;  // Set RTR bit for extended ID
+
   int pos_tmp = MitFloatToUint(pos, mit_param_.pos_min, mit_param_.pos_max, 16);
   int vel_tmp = MitFloatToUint(vel, mit_param_.vel_min, mit_param_.vel_max, 16);
   int tor_tmp = MitFloatToUint(toq, mit_param_.toq_min, mit_param_.toq_max, 16);
@@ -143,13 +115,13 @@ void Robstride::SetMitCmd(float pos, float vel, float toq, float kp, float kd) {
   int kd_tmp = MitFloatToUint(kd, mit_param_.kd_min, mit_param_.kd_max, 16);
 
   send_buf_[0] = (pos_tmp >> 8);
-  send_buf_[1] = pos_tmp & 0xFF;
+  send_buf_[1] = pos_tmp;
   send_buf_[2] = (vel_tmp >> 8);
-  send_buf_[3] = vel_tmp & 0xFF;
+  send_buf_[3] = vel_tmp;
   send_buf_[4] = (kp_tmp >> 8);
-  send_buf_[5] = kp_tmp & 0xFF;
+  send_buf_[5] = kp_tmp;
   send_buf_[6] = (kd_tmp >> 8);
-  send_buf_[7] = kd_tmp & 0xFF;
+  send_buf_[7] = kd_tmp;
 }
 
 }  // namespace xyber_robstride

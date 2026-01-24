@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include "common_type.h"
+//#include <iostream>
 
 // projects
 #include "internal/common_utils.h"
@@ -75,38 +76,6 @@ void SpiDevice::Close() {
     close(fd_);
     fd_ = -1;
   }
-}
-
-uint32_t SpiDevice::BuildCanId(uint8_t motor_id, uint8_t cmd_type, const uint8_t* data) {
-  uint32_t can_id = 0;
-
-  switch (cmd_type) {
-    case 0x06:  // Set zero
-      can_id = 0x0600FD00 | motor_id;
-      break;
-
-    case 0x03:  // Enable
-      can_id = 0x0300FD00 | motor_id;
-      break;
-
-    case 0x04:  // Stop
-      can_id = 0x0400FD00 | motor_id;
-      break;
-
-    case 0x01:  // MIT mode
-      if (data) {
-        // RobStride uses 16-bit torque encoding
-        uint16_t torque = (data[6] << 8) | data[7];
-        can_id = 0x01000000 | (torque << 8) | motor_id;
-      }
-      break;
-
-    default:
-      can_id = motor_id;
-      break;
-  }
-
-  return can_id;
 }
 
 bool SpiDevice::Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) {
@@ -267,14 +236,13 @@ void SpiDevice::SetMitCmd(const std::string& name, float pos, float vel, float e
   auto actr = GetActuator(name);
   if (!actr) return;
   // Set context for CAN ID building
-  current_motor_id_ = actr->GetId();
-  current_cmd_type_ = 0x01;  // MIT mode
-
+  std::lock_guard<std::mutex> lock(send_mtx_);
   // Actuator writes data to send_buf_.data
   actr->SetMitCmd(pos, vel, effort, kp, kd);
-
   // Build CAN ID
-  send_buf_.can_id = BuildCanId(current_motor_id_, current_cmd_type_, send_buf_.data);
+  send_buf_.can_id = actr->GetCanId();
+  //std::cout << "SPI Device SetMitCmd CAN ID: " << std::hex << send_buf_.can_id << std::endl;
+
 }
 
 }  // namespace xyber

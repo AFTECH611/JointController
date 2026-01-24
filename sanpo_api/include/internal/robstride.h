@@ -35,7 +35,6 @@ class Robstride : public xyber::Actuator {
   virtual void RequestState(xyber::ActuatorState state);
   virtual bool Enable() override;
   virtual bool Disable() override;
-  virtual bool Reset() override;
   virtual bool SetZero() override;
   virtual void SetTorque(float cur) override;
   virtual float GetTorque() override;
@@ -46,6 +45,7 @@ class Robstride : public xyber::Actuator {
 
   virtual void SetMitParam(xyber::MitParam param) override { mit_param_ = param; };
   virtual void SetMitCmd(float pos, float vel, float toq, float kp, float kd) override;
+  virtual uint32_t GetCanId() override { return can_id_; }
 
  private:
   int MitFloatToUint(float x, float x_min, float x_max, int bits);
@@ -55,6 +55,8 @@ class Robstride : public xyber::Actuator {
 
  private:
   xyber::MitParam mit_param_;
+  uint32_t can_id_;
+  uint8_t master_id_ = 0xFF;  // Default master ID
 };
 
 }  // namespace xyber_robstride

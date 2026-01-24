@@ -16,11 +16,11 @@ struct SpiDeviceInfo {
 int main() {
   JointControllerPtr controller(JointController::GetInstance());
   SpiDeviceInfo spi1 = {0, 0, "left_leg"};   // SPI bus 0, CS 0
-  SpiDeviceInfo spi2 = {0, 1, "right_leg"};  // SPI bus 0, CS 1
+  //SpiDeviceInfo spi2 = {0, 1, "right_leg"};  // SPI bus 0, CS 1
   controller->CreateSpiDevice(spi1.device_name, spi1.spi_bus, spi1.spi_cs);
-  controller->CreateSpiDevice(spi2.device_name, spi2.spi_bus, spi2.spi_cs);
+  //controller->CreateSpiDevice(spi2.device_name, spi2.spi_bus, spi2.spi_cs);
 
-  uint8_t actuator_can_id = 1;
+  uint8_t actuator_can_id = 127;
   std::string actuator_name = "left_knee_motor";
   controller->AttachActuator(spi1.device_name, CtrlChannel::CH1, ActuatorType::Robstride_00,
                              actuator_name, actuator_can_id);

@@ -230,15 +230,4 @@ void JointController::SetMitCmd(const std::string& name, float pos, float vel, f
   it->second->SetMitCmd(name, pos, vel, effort, kp, kd);
 }
 
-// Additional helper functions for RobStride
-
-// bool JointController::ResetMotor(const std::string& name) {
-//   auto it = spi_device_map_.find(name);
-//   if (it == spi_device_map_.end()) {
-//     LOG_ERROR("Motor %s not found", name.c_str());
-//     return false;
-//   }
-
-//   return it->second->Reset();
-// }
 }  // namespace xyber

@@ -38,7 +38,6 @@ class Actuator {
   virtual void RequestState(ActuatorState state) {}
   virtual bool Enable() { return false; }
   virtual bool Disable() { return false; }
-  virtual bool Reset() { return false; }
   virtual bool SetZero() { return false; }
   virtual void SetTorque(float cur) {}
   virtual float GetTorque() { return 0.0f; }
@@ -46,6 +45,7 @@ class Actuator {
   virtual float GetVelocity() { return 0.0f; }
   virtual void SetPosition(float pos) {}
   virtual float GetPosition() { return 0.0f; }
+  virtual uint32_t GetCanId() { return 0; }
 
   virtual void SetMitParam(MitParam param) {}
   virtual void SetMitCmd(float pos, float vel, float toq, float kp, float kd) {}
