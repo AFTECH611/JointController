@@ -35,9 +35,8 @@ JointController::JointController() {
 
 JointController::~JointController() {
   Stop();
-  for (auto& [name, spi_device] : spi_device_map_) {
-    delete spi_device;
-  }
+  spi_device_map_.clear();
+  actuator_spi_device_map_.clear();
 }
 
 JointController* JointController::GetInstance() {
@@ -132,7 +131,7 @@ bool JointController::Start(uint64_t cycle_ns) {
   is_running_ = spi_manager_.Start(spi_config_);
 
   if (is_running_) {
-    LOG_INFO("Controller started successfully on %s @ %lu Hz", 1000000000UL / cycle_ns);
+    LOG_INFO("Controller started successfully on %lu Hz", 1000000000UL / cycle_ns);
   } else {
     LOG_ERROR("Controller start failed");
   }
