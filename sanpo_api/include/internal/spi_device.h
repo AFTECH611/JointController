@@ -3,6 +3,7 @@
 // cpp
 #include <unordered_map>
 #include <vector>
+#include <queue>
 
 // projects
 #include "common_type.h"
@@ -21,6 +22,21 @@ class SpiDevice : public spi_manager::SpiNode {
   virtual bool Open() override;
   virtual void Close() override;
   virtual bool Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) override;
+  virtual bool HasPendingData() override {
+    std::lock_guard<std::mutex> lock(queue_mtx_);
+    return !send_queue_.empty();
+  }
+
+  virtual bool GetNextTxData(uint32_t& can_id, uint8_t* data) override {
+    std::lock_guard<std::mutex> lock(queue_mtx_);
+    if (send_queue_.empty()) return false;
+    
+    auto frame = send_queue_.front();
+    send_queue_.pop();
+    can_id = frame.can_id;
+    memcpy(data, frame.data, 8);
+    return true;
+  }
 
   void RegisterActuator(Actuator* actr);
   Actuator* GetActuator(const std::string& name);
@@ -69,6 +85,9 @@ class SpiDevice : public spi_manager::SpiNode {
 
   std::unordered_map<std::string, Actuator*> actuator_map_;
   std::unordered_map<CtrlChannel, std::vector<Actuator*>> ctrl_channel_map_;
+  std::queue<spi_manager::CanFrame> send_queue_;  // Thêm queue
+  std::mutex queue_mtx_;
+
 
   spi_manager::CanFrame send_buf_;
   spi_manager::CanFrame recv_buf_;

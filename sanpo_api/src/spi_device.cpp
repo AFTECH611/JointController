@@ -237,14 +237,18 @@ void SpiDevice::SetMitCmd(const std::string& name, float pos, float vel, float e
                           float kd) {
   auto actr = GetActuator(name);
   if (!actr) return;
-  // Set context for CAN ID building
+  
+  spi_manager::CanFrame frame;
   std::lock_guard<std::mutex> lock(send_mtx_);
-  // Actuator writes data to send_buf_.data
+  
   actr->SetMitCmd(pos, vel, effort, kp, kd);
-  // Build CAN ID
-  send_buf_.can_id = actr->GetCanId();
-  //std::cout << "SPI Device SetMitCmd CAN ID: " << std::hex << send_buf_.can_id << std::endl;
-
+  frame.can_id = actr->GetCanId();
+  memcpy(frame.data, send_buf_.data, 8);
+  
+  // Thêm vào queue thay vì ghi đè
+  std::lock_guard<std::mutex> queue_lock(queue_mtx_);
+  send_queue_.push(frame);
+                            
 }
 
 }  // namespace xyber

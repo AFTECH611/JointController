@@ -34,6 +34,9 @@ class SpiNode {
   virtual void Close() {}
   virtual bool Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) { return false; }
 
+  virtual bool HasPendingData() { return false; }
+  virtual bool GetNextTxData(uint32_t& can_id, uint8_t* data) { return false; }
+
   virtual void GetTxData(uint32_t& can_id, uint8_t* data) {
     std::lock_guard<std::mutex> lock(send_mtx_);
     can_id = GetSendBuf().can_id;

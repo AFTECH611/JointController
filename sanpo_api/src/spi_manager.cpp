@@ -148,47 +148,28 @@ void DumpSpiCanFrame(const spi_protocol::SpiCanFrame& f) {
 }
 
 bool SpiManager::ProcessBoard(SpiNode* node) {
-  spi_protocol::SpiCanFrame tx_frame;
-  memset(&tx_frame, 0, sizeof(tx_frame));
-
-  // Frame header/footer
-  memcpy(tx_frame.header, spi_protocol::FRAME_HEADER, 2);
-  memcpy(tx_frame.footer, spi_protocol::FRAME_FOOTER, 2);
-
-  // Get current command
-  uint32_t can_id;
-  node->GetTxData(can_id, tx_frame.data);
-
-  // Convert to big endian
-  tx_frame.can_id = __builtin_bswap32(can_id);
-
-  // Reserved bytes
-  tx_frame.reserved[0] = 0x00;
-  tx_frame.reserved[1] = 0x00;
-  tx_frame.reserved[2] = 0x00;
-  tx_frame.reserved[3] = 0x10;
-
-  // Calculate CRC
-  tx_frame.crc = crc_calculator_.Calculate((uint8_t*)&tx_frame, spi_protocol::SPI_FRAME_SIZE - 1);
-  DumpSpiCanFrame(tx_frame);
-  // SPI transfer
-  spi_protocol::SpiCanFrame rx_frame;
-  if (!node->Transfer((uint8_t*)&tx_frame, (uint8_t*)&rx_frame, spi_protocol::SPI_FRAME_SIZE)) {
-    return false;
+  // Gửi tất cả lệnh trong queue
+  while (node->HasPendingData()) {
+    spi_protocol::SpiCanFrame tx_frame;
+    memset(&tx_frame, 0, sizeof(tx_frame));
+    
+    memcpy(tx_frame.header, spi_protocol::FRAME_HEADER, 2);
+    memcpy(tx_frame.footer, spi_protocol::FRAME_FOOTER, 2);
+    
+    uint32_t can_id;
+    if (!node->GetNextTxData(can_id, tx_frame.data)) break;
+    
+    tx_frame.can_id = __builtin_bswap32(can_id);
+    tx_frame.reserved[3] = 0x10;
+    tx_frame.crc = crc_calculator_.Calculate((uint8_t*)&tx_frame, spi_protocol::SPI_FRAME_SIZE - 1);
+    
+    spi_protocol::SpiCanFrame rx_frame;
+    if (!node->Transfer((uint8_t*)&tx_frame, (uint8_t*)&rx_frame, spi_protocol::SPI_FRAME_SIZE)) {
+      continue;
+    }
+    
+    // Xử lý response...
   }
-
-  // Verify CRC
-  uint8_t calc_crc =
-      crc_calculator_.Calculate((uint8_t*)&rx_frame, spi_protocol::SPI_FRAME_SIZE - 1);
-  if (calc_crc != rx_frame.crc) {
-    // LOG_WARN("CRC mismatch on board %s", node->GetName().c_str());
-    return false;
-  }
-
-  // Push RX data
-  rx_frame.can_id = __builtin_bswap32(rx_frame.can_id);
-  node->PushRxData(rx_frame.can_id, rx_frame.data);
-
   return true;
 }
 

@@ -16,14 +16,17 @@ struct SpiDeviceInfo {
 int main() {
   JointControllerPtr controller(JointController::GetInstance());
   SpiDeviceInfo spi1 = {0, 0, "left_leg"};   // SPI bus 0, CS 0
-  //SpiDeviceInfo spi2 = {0, 1, "right_leg"};  // SPI bus 0, CS 1
   controller->CreateSpiDevice(spi1.device_name, spi1.spi_bus, spi1.spi_cs);
-  //controller->CreateSpiDevice(spi2.device_name, spi2.spi_bus, spi2.spi_cs);
 
-  uint8_t actuator_can_id = 127;
-  std::string actuator_name = "left_knee_motor";
+  uint8_t actuator1_can_id = 127;
+  std::string actuator1_name = "left_knee_motor";
   controller->AttachActuator(spi1.device_name, CtrlChannel::CH1, ActuatorType::Robstride_00,
-                             actuator_name, actuator_can_id);
+                             actuator1_name, actuator1_can_id);
+
+  uint8_t actuator2_can_id = 4;
+  std::string actuator2_name = "left_ankle_motor";
+  controller->AttachActuator(spi1.device_name, CtrlChannel::CH1, ActuatorType::Robstride_00,
+                             actuator2_name, actuator2_can_id);
 
   controller->EnableAllActuator();
 
@@ -35,14 +38,16 @@ int main() {
   }
   // Step 5. Control the actuator
   float dt = 0;
-  float pos_begin = controller->GetPosition(actuator_name);
-  for (size_t i = 0; i < 1; i++) {
+  float pos_begin = controller->GetPosition(actuator1_name);
+  for (size_t i = 0; i < 100 * 30; i++) {
     // Set target position using MIT mode
     double pos_cmd = pos_begin + 2 * sin(dt);
-    controller->SetMitCmd(actuator_name, 0, 0, 0, 10, 0.5);
+    controller->SetMitCmd(actuator1_name, pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd(actuator2_name, pos_cmd, 0, 0, 0.9, 0.2);
 
     // read current position
-    float pos_now = controller->GetPosition(actuator_name);
+    float pos_now = controller->GetPosition(actuator1_name);
+    float pos_now2 = controller->GetPosition(actuator2_name);
     std::cout << "Position: Cmd " << pos_cmd << " Now " << pos_now << std::endl;
     //controller->EnableActuator(actuator_name);  // keep alive
 
