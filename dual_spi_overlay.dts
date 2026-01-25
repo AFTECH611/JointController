@@ -1,0 +1,39 @@
+/dts-v1/;
+/plugin/;
+
+/* * Overlay kích hoạt SPI0 với 2 Chip Select (CS0 & CS1)
+ * Target: Radxa 5B (RK3588)
+ */
+
+&spi0 {
+    status = "okay";
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+    /* QUAN TRỌNG: Khai báo số lượng CS là 2 */
+    num-cs = <2>;
+
+    /* * Cấu hình chân GPIO làm Chip Select
+     * &gpio1: Bank GPIO1
+     * 10: Index của GPIO1_B2 (Group B bắt đầu từ 8 -> B0=8, B1=9, B2=10)
+     * 11: Index của GPIO1_B3 (B3=11)
+     * 1: Cờ GPIO_ACTIVE_LOW
+     */
+    cs-gpios = <&gpio1 10 1>, <&gpio1 11 1>;
+
+    /* Thiết bị 1: spidev0.0 dùng CS0 (Pin 24) */
+    spidev@0 {
+        compatible = "rockchip,spidev";
+        reg = <0>;
+        spi-max-frequency = <10000000>; /* 10 MHz */
+        status = "okay";
+    };
+
+    /* Thiết bị 2: spidev0.1 dùng CS1 (Pin 26) */
+    spidev@1 {
+        compatible = "rockchip,spidev";
+        reg = <1>;
+        spi-max-frequency = <10000000>; /* 10 MHz */
+        status = "okay";
+    };
+};
