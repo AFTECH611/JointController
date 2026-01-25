@@ -36,15 +36,15 @@ int main() {
   // Step 5. Control the actuator
   float dt = 0;
   float pos_begin = controller->GetPosition(actuator_name);
-  for (size_t i = 0; i < 100 * 30; i++) {
+  for (size_t i = 0; i < 1; i++) {
     // Set target position using MIT mode
     double pos_cmd = pos_begin + 2 * sin(dt);
-    //controller->SetMitCmd(actuator_name, pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd(actuator_name, 0, 0, 0, 10, 0.5);
 
     // read current position
-    // float pos_now = controller->GetPosition(actuator_name);
-    // std::cout << "Position: Cmd " << pos_cmd << " Now " << pos_now << std::endl;
-    controller->EnableActuator(actuator_name);  // keep alive
+    float pos_now = controller->GetPosition(actuator_name);
+    std::cout << "Position: Cmd " << pos_cmd << " Now " << pos_now << std::endl;
+    //controller->EnableActuator(actuator_name);  // keep alive
 
     // phase control
     dt += 0.01;
