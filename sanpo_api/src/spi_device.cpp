@@ -99,8 +99,41 @@ bool SpiDevice::Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) {
 }
 
 void SpiDevice::RegisterActuator(Actuator* actr) {
-  actuator_map_[actr->GetName()] = actr;
-  LOG_INFO("Actuator %s registered to SPI device %s", actr->GetName().c_str(), name_.c_str());
+  std::string name = actr->GetName();
+  actuator_map_[name] = actr;
+  
+  // Allocate buffers immediately when registering
+  ActuatorBuffers buffers;
+  memset(buffers.send, 0, 8);
+  memset(buffers.recv, 0, 8);
+  actuator_buffers_[name] = buffers;
+  
+  // Set buffer pointers
+  actr->SetDataFiled(actuator_buffers_[name].send, actuator_buffers_[name].recv);
+  
+  // Map motor CAN ID to actuator for feedback routing
+  uint8_t motor_id = actr->GetId();
+  response_map_[motor_id] = name;
+  
+  LOG_INFO("Actuator %s (Motor ID: 0x%02X) registered to SPI device %s", 
+           name.c_str(), motor_id, name_.c_str());
+}
+
+void SpiDevice::OnDataReceived(uint32_t can_id, const uint8_t* data) {
+  // Extract motor ID from CAN ID (bits 0-7)
+  uint8_t motor_id = can_id & 0xFF;
+  
+  // Find actuator by motor ID
+  auto it = response_map_.find(motor_id);
+  if (it != response_map_.end()) {
+    auto actr = GetActuator(it->second);
+    if (actr) {
+      // Let actuator parse its own feedback
+      actr->ParseFeedback(can_id, data);
+    }
+  } else {
+    LOG_WARN("Received data for unknown motor ID: 0x%02X (CAN ID: 0x%08X)", motor_id, can_id);
+  }
 }
 
 Actuator* SpiDevice::GetActuator(const std::string& name) {
@@ -109,12 +142,19 @@ Actuator* SpiDevice::GetActuator(const std::string& name) {
 }
 
 void SpiDevice::QueueCommand(uint32_t can_id, const uint8_t* data) {
+  if (data == nullptr) {
+    LOG_ERROR("QueueCommand called with null data pointer!");
+    return;
+  }
+  
   spi_manager::CanFrame frame;
   frame.can_id = can_id;
   memcpy(frame.data, data, 8);
   
   std::lock_guard<std::mutex> lock(queue_mtx_);
   send_queue_.push(frame);
+  
+  LOG_DEBUG("Command queued: CAN ID 0x%08X, queue size: %zu", can_id, send_queue_.size());
 }
 
 bool SpiDevice::EnableAllActuator() {
@@ -139,17 +179,23 @@ bool SpiDevice::EnableAllActuator() {
 
 bool SpiDevice::EnableActuator(const std::string& name) {
   auto actr = GetActuator(name);
-  LOG_INFO("Enabling actuator %s on device %s", name.c_str(), name_.c_str());
   if (!actr) {
     LOG_ERROR("Actuator %s not found", name.c_str());
     return false;
   }
+  
+  // Verify buffers exist
+  auto it = actuator_buffers_.find(name);
+  if (it == actuator_buffers_.end()) {
+    LOG_ERROR("Actuator %s has no buffers allocated!", name.c_str());
+    return false;
+  }
 
-  auto& buffers = actuator_buffers_[name];
+  auto& buffers = it->second;
   actr->Enable();
   QueueCommand(actr->GetCanId(), buffers.send);
   
-  LOG_DEBUG("Actuator %s enable command queued", name.c_str());
+  LOG_DEBUG("Actuator %s enable command queued (CAN ID: 0x%08X)", name.c_str(), actr->GetCanId());
   return true;
 }
 
@@ -197,9 +243,7 @@ void SpiDevice::SetMitCmd(const std::string& name, float pos, float vel,
 float SpiDevice::GetPosition(const std::string& name) {
   auto actr = GetActuator(name);
   if (!actr) return 0.0f;
-
-  auto& buffers = actuator_buffers_[name];
-  return actr->GetPosition();
+  return actr->GetPosition();  // Already updated by ParseFeedback
 }
 
 float SpiDevice::GetVelocity(const std::string& name) {

@@ -156,17 +156,20 @@ bool SpiManager::ProcessBoard(SpiNode* node) {
     spi_protocol::SpiCanFrame tx_frame;
     memset(&tx_frame, 0, sizeof(tx_frame));
     
+    // Build TX frame
     memcpy(tx_frame.header, spi_protocol::FRAME_HEADER, 2);
     memcpy(tx_frame.footer, spi_protocol::FRAME_FOOTER, 2);
     
     uint32_t can_id;
     if (!node->GetNextTxData(can_id, tx_frame.data)) break;
     
-    tx_frame.can_id = __builtin_bswap32(can_id);  // Convert to big-endian
+    // Convert CAN ID to big-endian for SPI transmission
+    tx_frame.can_id = __builtin_bswap32(can_id);
     tx_frame.reserved[3] = 0x10;
     tx_frame.crc = crc_calculator_.Calculate((uint8_t*)&tx_frame, 
                                              spi_protocol::SPI_FRAME_SIZE - 1);
     
+    // Perform SPI transfer
     spi_protocol::SpiCanFrame rx_frame;
     if (!node->Transfer((uint8_t*)&tx_frame, (uint8_t*)&rx_frame, 
                         spi_protocol::SPI_FRAME_SIZE)) {
@@ -174,10 +177,20 @@ bool SpiManager::ProcessBoard(SpiNode* node) {
       continue;
     }
     
-    // Verify response
+    // Verify response header and parse feedback
     if (memcmp(rx_frame.header, spi_protocol::FRAME_HEADER, 2) == 0) {
+      // Convert CAN ID back to host byte order
       uint32_t rx_can_id = __builtin_bswap32(rx_frame.can_id);
+      
+      // Push received data to node (this will trigger ParseFeedback via OnDataReceived)
       node->PushRxData(rx_can_id, rx_frame.data);
+      
+      LOG_DEBUG("RX from %s: CAN ID 0x%08X, Data: %02X %02X %02X %02X %02X %02X %02X %02X",
+                node->GetName().c_str(), rx_can_id,
+                rx_frame.data[0], rx_frame.data[1], rx_frame.data[2], rx_frame.data[3],
+                rx_frame.data[4], rx_frame.data[5], rx_frame.data[6], rx_frame.data[7]);
+    } else {
+      LOG_WARN("Invalid frame header received from %s", node->GetName().c_str());
     }
     
     processed++;

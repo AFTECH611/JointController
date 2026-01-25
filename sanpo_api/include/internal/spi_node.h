@@ -47,7 +47,13 @@ class SpiNode {
     std::lock_guard<std::mutex> lock(recv_mtx_);
     GetRecvBuf().can_id = can_id;
     std::memcpy(GetRecvBuf().data, data, 8);
+    
+    // Notify derived class to parse feedback
+    OnDataReceived(can_id, data);
   }
+  
+  // Override in SpiDevice to dispatch to actuators
+  virtual void OnDataReceived(uint32_t can_id, const uint8_t* data) {}
 
  protected:
   std::string node_name_;

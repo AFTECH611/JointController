@@ -29,24 +29,31 @@ class Actuator {
   std::string GetName() { return name_; }
   CtrlChannel GetCtrlChannel() { return ctrl_ch_; }
   ActuatorType GetType() { return type_; }
+  
   virtual void SetDataFiled(uint8_t* send, uint8_t* recv) {
     send_buf_ = send;
     recv_buf_ = recv;
   }
+
+  // Parse received CAN data and update internal state
+  virtual void ParseFeedback(uint32_t can_id, const uint8_t* data) {}
 
  public:  // Actuator base function
   virtual void RequestState(ActuatorState state) {}
   virtual bool Enable() { return false; }
   virtual bool Disable() { return false; }
   virtual bool SetZero() { return false; }
+  
   virtual void SetTorque(float cur) {}
-  virtual float GetTorque() { return 0.0f; }
+  virtual float GetTorque() { return torque_; }
+  
   virtual void SetVelocity(float vel) {}
-  virtual float GetVelocity() { return 0.0f; }
+  virtual float GetVelocity() { return velocity_; }
+  
   virtual void SetPosition(float pos) {}
-  virtual float GetPosition() { return 0.0f; }
+  virtual float GetPosition() { return position_; }
+  
   virtual uint32_t GetCanId() { return 0; }
-
   virtual void SetMitParam(MitParam param) {}
   virtual void SetMitCmd(float pos, float vel, float toq, float kp, float kd) {}
 
@@ -57,6 +64,12 @@ class Actuator {
   uint8_t* recv_buf_ = nullptr;
   CtrlChannel ctrl_ch_;
   ActuatorType type_;
+  
+  // Feedback state - updated by ParseFeedback()
+  float position_ = 0.0f;
+  float velocity_ = 0.0f;
+  float torque_ = 0.0f;
+  float temperature_ = 0.0f;
 };
 
 }  // namespace xyber

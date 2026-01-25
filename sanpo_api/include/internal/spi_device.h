@@ -1,9 +1,11 @@
+// spi_device.h
 #pragma once
+// cpp
 #include <unordered_map>
 #include <vector>
 #include <queue>
-#include <mutex>
 
+// projects
 #include "common_type.h"
 #include "internal/actuator_base.h"
 #include "internal/spi_node.h"
@@ -20,7 +22,6 @@ class SpiDevice : public spi_manager::SpiNode {
   virtual bool Open() override;
   virtual void Close() override;
   virtual bool Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) override;
-  
   virtual bool HasPendingData() override {
     std::lock_guard<std::mutex> lock(queue_mtx_);
     return !send_queue_.empty();
@@ -40,8 +41,12 @@ class SpiDevice : public spi_manager::SpiNode {
   void RegisterActuator(Actuator* actr);
   Actuator* GetActuator(const std::string& name);
   virtual std::string GetName() override { return name_; }
+  void SetChannelId(CtrlChannel ch, uint8_t id);
+  
+  // Override to dispatch feedback to actuators
+  virtual void OnDataReceived(uint32_t can_id, const uint8_t* data) override;
 
- public:  // Actuator API
+ public:  // Actuator Stuff
   bool EnableAllActuator();
   bool EnableActuator(const std::string& name);
   bool DisableAllActuator();
@@ -66,6 +71,10 @@ class SpiDevice : public spi_manager::SpiNode {
   // Helper: Queue a command for transmission
   void QueueCommand(uint32_t can_id, const uint8_t* data);
 
+  // Configuration
+  void SetSpeed(uint32_t speed_hz) { speed_hz_ = speed_hz; }
+  void SetMode(uint8_t mode) { mode_ = mode; }
+
  private:
   std::string name_;
   uint8_t bus_;
@@ -75,6 +84,7 @@ class SpiDevice : public spi_manager::SpiNode {
   uint8_t mode_;
 
   std::unordered_map<std::string, Actuator*> actuator_map_;
+  std::unordered_map<CtrlChannel, std::vector<Actuator*>> ctrl_channel_map_;
   
   // Separate buffers for each actuator to avoid conflicts
   struct ActuatorBuffers {
@@ -90,9 +100,8 @@ class SpiDevice : public spi_manager::SpiNode {
   spi_manager::CanFrame send_buf_;
   spi_manager::CanFrame recv_buf_;
   
-  // Response mapping: CAN ID -> actuator name
-  std::unordered_map<uint32_t, std::string> response_map_;
-  std::mutex response_mtx_;
+  // Response mapping: Motor ID (uint8_t) -> actuator name
+  std::unordered_map<uint8_t, std::string> response_map_;
 };
 
-}
+}  // namespace xyber

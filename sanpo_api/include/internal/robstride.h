@@ -32,18 +32,24 @@ class Robstride : public xyber::Actuator {
   ~Robstride() {}
 
  public:
+  // Parse feedback from motor
+  virtual void ParseFeedback(uint32_t can_id, const uint8_t* data) override;
+  
   virtual void RequestState(xyber::ActuatorState state);
   virtual bool Enable() override;
   virtual bool Disable() override;
   virtual bool SetZero() override;
+  
   virtual void SetTorque(float cur) override;
-  virtual float GetTorque() override;
+  virtual float GetTorque() override { return torque_; }
+  
   virtual void SetVelocity(float vel) override;
-  virtual float GetVelocity() override;
+  virtual float GetVelocity() override { return velocity_; }
+  
   virtual void SetPosition(float pos) override;
-  virtual float GetPosition() override;
+  virtual float GetPosition() override { return position_; }
 
-  virtual void SetMitParam(xyber::MitParam param) override { mit_param_ = param; };
+  virtual void SetMitParam(xyber::MitParam param) override { mit_param_ = param; }
   virtual void SetMitCmd(float pos, float vel, float toq, float kp, float kd) override;
   virtual uint32_t GetCanId() override { return can_id_; }
 
