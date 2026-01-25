@@ -3,6 +3,8 @@
 #include <chrono>
 #include <cstring>
 #include "internal/common_utils.h"
+#include <iostream>
+#include <iomanip>
 
 using namespace std::chrono_literals;
 
@@ -89,6 +91,62 @@ void SpiManager::WorkLoop() {
   LOG_INFO("SPI WorkLoop stopped");
 }
 
+void DumpSpiCanFrame(const spi_protocol::SpiCanFrame& f) {
+  std::cout << "===== SpiCanFrame Dump =====" << std::endl;
+
+  std::cout << "Header: ";
+  for (int i = 0; i < 2; ++i) {
+    std::cout << "0x"
+              << std::hex
+              << static_cast<int>(f.header[i])
+              << " ";
+  }
+  std::cout << std::dec << std::endl;
+
+  std::cout << "CAN ID (raw BE): 0x"
+            << std::hex
+            << std::setw(8)
+            << std::setfill('0')
+            << f.can_id
+            << std::dec
+            << std::endl;
+
+  std::cout << "Data: ";
+  for (int i = 0; i < 8; ++i) {
+    std::cout << std::hex
+              << std::setw(2)
+              << std::setfill('0')
+              << static_cast<int>(f.data[i])
+              << " ";
+  }
+  std::cout << std::dec << std::endl;
+
+  std::cout << "Footer: ";
+  for (int i = 0; i < 2; ++i) {
+    std::cout << std::hex
+              << static_cast<int>(f.footer[i])
+              << " ";
+  }
+  std::cout << std::dec << std::endl;
+
+  std::cout << "Reserved: ";
+  for (int i = 0; i < 4; ++i) {
+    std::cout << std::hex
+              << static_cast<int>(f.reserved[i])
+              << " ";
+  }
+  std::cout << std::dec << std::endl;
+
+  std::cout << "CRC8: 0x"
+            << std::hex
+            << static_cast<int>(f.crc)
+            << std::dec
+            << std::endl;
+
+  std::cout << "--------------------------------" << std::endl;
+
+}
+
 bool SpiManager::ProcessBoard(SpiNode* node) {
   spi_protocol::SpiCanFrame tx_frame;
   memset(&tx_frame, 0, sizeof(tx_frame));
@@ -102,7 +160,7 @@ bool SpiManager::ProcessBoard(SpiNode* node) {
   node->GetTxData(can_id, tx_frame.data);
 
   // Convert to big endian
-  tx_frame.can_id = can_id;
+  tx_frame.can_id = __builtin_bswap32(can_id);
 
   // Reserved bytes
   tx_frame.reserved[0] = 0x00;
@@ -112,7 +170,7 @@ bool SpiManager::ProcessBoard(SpiNode* node) {
 
   // Calculate CRC
   tx_frame.crc = crc_calculator_.Calculate((uint8_t*)&tx_frame, spi_protocol::SPI_FRAME_SIZE - 1);
-
+  DumpSpiCanFrame(tx_frame);
   // SPI transfer
   spi_protocol::SpiCanFrame rx_frame;
   if (!node->Transfer((uint8_t*)&tx_frame, (uint8_t*)&rx_frame, spi_protocol::SPI_FRAME_SIZE)) {
@@ -123,12 +181,12 @@ bool SpiManager::ProcessBoard(SpiNode* node) {
   uint8_t calc_crc =
       crc_calculator_.Calculate((uint8_t*)&rx_frame, spi_protocol::SPI_FRAME_SIZE - 1);
   if (calc_crc != rx_frame.crc) {
-    LOG_WARN("CRC mismatch on board %s", node->GetName().c_str());
+    // LOG_WARN("CRC mismatch on board %s", node->GetName().c_str());
     return false;
   }
 
   // Push RX data
-  rx_frame.can_id = rx_frame.can_id;
+  rx_frame.can_id = __builtin_bswap32(rx_frame.can_id);
   node->PushRxData(rx_frame.can_id, rx_frame.data);
 
   return true;
