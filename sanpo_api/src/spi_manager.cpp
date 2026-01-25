@@ -148,8 +148,11 @@ void DumpSpiCanFrame(const spi_protocol::SpiCanFrame& f) {
 }
 
 bool SpiManager::ProcessBoard(SpiNode* node) {
-  // Gửi tất cả lệnh trong queue
-  while (node->HasPendingData()) {
+  // Process ALL pending commands in queue each cycle
+  int processed = 0;
+  const int MAX_PER_CYCLE = 10;  // Limit to prevent blocking
+  
+  while (node->HasPendingData() && processed < MAX_PER_CYCLE) {
     spi_protocol::SpiCanFrame tx_frame;
     memset(&tx_frame, 0, sizeof(tx_frame));
     
@@ -159,18 +162,28 @@ bool SpiManager::ProcessBoard(SpiNode* node) {
     uint32_t can_id;
     if (!node->GetNextTxData(can_id, tx_frame.data)) break;
     
-    tx_frame.can_id = __builtin_bswap32(can_id);
+    tx_frame.can_id = __builtin_bswap32(can_id);  // Convert to big-endian
     tx_frame.reserved[3] = 0x10;
-    tx_frame.crc = crc_calculator_.Calculate((uint8_t*)&tx_frame, spi_protocol::SPI_FRAME_SIZE - 1);
+    tx_frame.crc = crc_calculator_.Calculate((uint8_t*)&tx_frame, 
+                                             spi_protocol::SPI_FRAME_SIZE - 1);
     
     spi_protocol::SpiCanFrame rx_frame;
-    if (!node->Transfer((uint8_t*)&tx_frame, (uint8_t*)&rx_frame, spi_protocol::SPI_FRAME_SIZE)) {
+    if (!node->Transfer((uint8_t*)&tx_frame, (uint8_t*)&rx_frame, 
+                        spi_protocol::SPI_FRAME_SIZE)) {
+      LOG_ERROR("SPI transfer failed for node %s", node->GetName().c_str());
       continue;
     }
     
-    // Xử lý response...
+    // Verify response
+    if (memcmp(rx_frame.header, spi_protocol::FRAME_HEADER, 2) == 0) {
+      uint32_t rx_can_id = __builtin_bswap32(rx_frame.can_id);
+      node->PushRxData(rx_can_id, rx_frame.data);
+    }
+    
+    processed++;
   }
-  return true;
+  
+  return processed > 0;
 }
 
 }  // namespace spi_manager

@@ -1,38 +1,23 @@
-/*
- * @Author: richie.li
- * @Date: 2024-10-21 14:10:06
- * @LastEditors: richie.li
- * @LastEditTime: 2024-10-21 20:18:31
- */
-
 #include "internal/spi_device.h"
-
 #include <fcntl.h>
 #include <linux/spi/spidev.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <cstdio>
 #include <cstring>
-#include "common_type.h"
-//#include <iostream>
 
-// projects
 #include "internal/common_utils.h"
 
-#define COM_TIME_UP_MS 1000
-#define MAX_CHANNEL_DEVICES 3
-#define CHANNEL_BROADCAST_ID 0xFF
-
 using namespace spi_manager;
-using namespace std::chrono_literals;
 
 namespace xyber {
 
 SpiDevice::SpiDevice(std::string name, uint8_t bus, uint8_t cs)
-    : fd_(-1), speed_hz_(10000000), mode_(SPI_MODE_0), SpiNode(), name_(name) {
-  LOG_DEBUG("SpiDevice %s bus %u cs %u created.", name.c_str(), bus, cs);
+    : name_(name), bus_(bus), cs_(cs), fd_(-1), 
+      speed_hz_(10000000), mode_(SPI_MODE_0) {
   memset(&send_buf_, 0, sizeof(send_buf_));
   memset(&recv_buf_, 0, sizeof(recv_buf_));
+  LOG_DEBUG("SpiDevice %s bus %u cs %u created.", name.c_str(), bus, cs);
 }
 
 SpiDevice::~SpiDevice() {
@@ -42,8 +27,16 @@ SpiDevice::~SpiDevice() {
 }
 
 bool SpiDevice::Init() {
+  // Allocate separate buffers for each actuator
   for (auto& [name, actr] : actuator_map_) {
-    actr->SetDataFiled(send_buf_.data, recv_buf_.data);
+    ActuatorBuffers buffers;
+    memset(buffers.send, 0, 8);
+    memset(buffers.recv, 0, 8);
+    actuator_buffers_[name] = buffers;
+    
+    actr->SetDataFiled(actuator_buffers_[name].send, actuator_buffers_[name].recv);
+    
+    LOG_DEBUG("Actuator %s initialized with dedicated buffers", name.c_str());
   }
 
   LOG_INFO("SpiDevice %s initialized with %zu actuators", name_.c_str(), actuator_map_.size());
@@ -60,14 +53,19 @@ bool SpiDevice::Open() {
     return false;
   }
 
-  // Set SPI mode
   if (ioctl(fd_, SPI_IOC_WR_MODE, &mode_) < 0) {
     LOG_ERROR("Failed to set SPI mode: %s", strerror(errno));
     Close();
     return false;
   }
 
-  LOG_INFO("SPI device %s opened, speed=%u Hz", dev_path, speed_hz_);
+  if (ioctl(fd_, SPI_IOC_WR_MAX_SPEED_HZ, &speed_hz_) < 0) {
+    LOG_ERROR("Failed to set SPI speed: %s", strerror(errno));
+    Close();
+    return false;
+  }
+
+  LOG_INFO("SPI device %s opened successfully, speed=%u Hz", dev_path, speed_hz_);
   return true;
 }
 
@@ -80,13 +78,12 @@ void SpiDevice::Close() {
 
 bool SpiDevice::Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) {
   if (fd_ < 0) {
-    LOG_ERROR("SPI device not open");
+    LOG_ERROR("SPI device %s not open", name_.c_str());
     return false;
   }
 
   struct spi_ioc_transfer tr;
   memset(&tr, 0, sizeof(tr));
-
   tr.tx_buf = (unsigned long)tx_data;
   tr.rx_buf = (unsigned long)rx_data;
   tr.len = len;
@@ -94,7 +91,7 @@ bool SpiDevice::Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) {
   tr.bits_per_word = 8;
 
   if (ioctl(fd_, SPI_IOC_MESSAGE(1), &tr) < 0) {
-    LOG_ERROR("SPI transfer failed: %s", strerror(errno));
+    LOG_ERROR("SPI transfer failed on %s: %s", name_.c_str(), strerror(errno));
     return false;
   }
 
@@ -102,50 +99,57 @@ bool SpiDevice::Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) {
 }
 
 void SpiDevice::RegisterActuator(Actuator* actr) {
-  CtrlChannel ch = actr->GetCtrlChannel();
-  if (ctrl_channel_map_[ch].size() >= MAX_CHANNEL_DEVICES) {
-    LOG_ERROR("Channel %d has too many devices, %s register failed.", (int)ch,
-              actr->GetName().c_str());
-    return;
-  }
-
-  actr->SetDataFiled(send_buf_.data, recv_buf_.data);
   actuator_map_[actr->GetName()] = actr;
-  ctrl_channel_map_[ch].push_back(actr);
+  LOG_INFO("Actuator %s registered to SPI device %s", actr->GetName().c_str(), name_.c_str());
 }
 
 Actuator* SpiDevice::GetActuator(const std::string& name) {
   auto it = actuator_map_.find(name);
-  if (it != actuator_map_.end()) {
-    return it->second;
-  }
-  return nullptr;
+  return (it != actuator_map_.end()) ? it->second : nullptr;
+}
+
+void SpiDevice::QueueCommand(uint32_t can_id, const uint8_t* data) {
+  spi_manager::CanFrame frame;
+  frame.can_id = can_id;
+  memcpy(frame.data, data, 8);
+  
+  std::lock_guard<std::mutex> lock(queue_mtx_);
+  send_queue_.push(frame);
 }
 
 bool SpiDevice::EnableAllActuator() {
+  LOG_INFO("SpiDevice::EnableAllActuator for %s, actuators: %zu", 
+           name_.c_str(), actuator_map_.size());
+  
   for (const auto& [name, actr] : actuator_map_) {
-    if (!EnableActuator(name)) return false;
+    LOG_INFO("  Enabling actuator: %s, ptr: %p", name.c_str(), (void*)actr);
+    
+    if (actr == nullptr) {
+      LOG_ERROR("  Actuator %s is NULL!", name.c_str());
+      return false;
+    }
+    
+    if (!EnableActuator(name)) {
+      LOG_ERROR("  Failed to enable %s", name.c_str());
+      return false;
+    }
   }
   return true;
 }
 
 bool SpiDevice::EnableActuator(const std::string& name) {
   auto actr = GetActuator(name);
-  if (!actr) return false;
-
-  // if (actr->GetType() == ActuatorType::Robstride_00 ||
-  //     actr->GetType() == ActuatorType::Robstride_02) {
-  //   return true;
-  // }
-
-  {
-    std::lock_guard<std::mutex> lock(send_mtx_);
-    actr->Enable();
-    send_buf_.can_id = actr->GetCanId();
+  LOG_INFO("Enabling actuator %s on device %s", name.c_str(), name_.c_str());
+  if (!actr) {
+    LOG_ERROR("Actuator %s not found", name.c_str());
+    return false;
   }
 
-  LOG_DEBUG("Actuator %s %d enable success.", name.c_str(), (int)actr->GetId());
-
+  auto& buffers = actuator_buffers_[name];
+  actr->Enable();
+  QueueCommand(actr->GetCanId(), buffers.send);
+  
+  LOG_DEBUG("Actuator %s enable command queued", name.c_str());
   return true;
 }
 
@@ -160,95 +164,60 @@ bool SpiDevice::DisableActuator(const std::string& name) {
   auto actr = GetActuator(name);
   if (!actr) return false;
 
-  {
-    std::lock_guard<std::mutex> lock(send_mtx_);
-    actr->Disable();
-    send_buf_.can_id = actr->GetCanId();
-  }
-
+  auto& buffers = actuator_buffers_[name];
+  actr->Disable();
+  QueueCommand(actr->GetCanId(), buffers.send);
+  
+  LOG_DEBUG("Actuator %s disable command queued", name.c_str());
   return true;
 }
 
-// float SpiDevice::GetTempure(const std::string& name) {
-//   auto actr = GetActuator(name);
-//   if (!actr) return 0;
+bool SpiDevice::SetZeroPosition(const std::string& name) {
+  auto actr = GetActuator(name);
+  if (!actr) return false;
 
-//   std::lock_guard<std::mutex> lock(recv_mtx_);
-//   return actr->GetTemperature();
-// }
+  auto& buffers = actuator_buffers_[name];
+  actr->SetZero();
+  QueueCommand(actr->GetCanId(), buffers.send);
+  
+  LOG_INFO("Actuator %s set zero command queued", name.c_str());
+  return true;
+}
 
-void SpiDevice::SetTorque(const std::string& name, float cur) {
+void SpiDevice::SetMitCmd(const std::string& name, float pos, float vel, 
+                          float effort, float kp, float kd) {
   auto actr = GetActuator(name);
   if (!actr) return;
 
-  std::lock_guard<std::mutex> lock(send_mtx_);
-  actr->SetTorque(cur);
-}
-
-float SpiDevice::GetTorque(const std::string& name) {
-  auto actr = GetActuator(name);
-  if (!actr) return 0;
-
-  std::lock_guard<std::mutex> lock(recv_mtx_);
-  return actr->GetTorque();
-}
-
-void SpiDevice::SetVelocity(const std::string& name, float vel) {
-  auto actr = GetActuator(name);
-  if (!actr) return;
-
-  std::lock_guard<std::mutex> lock(send_mtx_);
-  actr->SetVelocity(vel);
-}
-
-float SpiDevice::GetVelocity(const std::string& name) {
-  auto actr = GetActuator(name);
-  if (!actr) return 0;
-
-  std::lock_guard<std::mutex> lock(recv_mtx_);
-  return actr->GetVelocity();
-}
-
-void SpiDevice::SetPosition(const std::string& name, float pos) {
-  auto actr = GetActuator(name);
-  if (!actr) return;
-
-  std::lock_guard<std::mutex> lock(send_mtx_);
-  actr->SetPosition(pos);
+  auto& buffers = actuator_buffers_[name];
+  actr->SetMitCmd(pos, vel, effort, kp, kd);
+  QueueCommand(actr->GetCanId(), buffers.send);
 }
 
 float SpiDevice::GetPosition(const std::string& name) {
   auto actr = GetActuator(name);
-  if (!actr) return 0;
+  if (!actr) return 0.0f;
 
-  std::lock_guard<std::mutex> lock(recv_mtx_);
+  auto& buffers = actuator_buffers_[name];
   return actr->GetPosition();
+}
+
+float SpiDevice::GetVelocity(const std::string& name) {
+  auto actr = GetActuator(name);
+  if (!actr) return 0.0f;
+  return actr->GetVelocity();
+}
+
+float SpiDevice::GetTorque(const std::string& name) {
+  auto actr = GetActuator(name);
+  if (!actr) return 0.0f;
+  return actr->GetTorque();
 }
 
 void SpiDevice::SetMitParam(const std::string& name, MitParam param) {
   auto actr = GetActuator(name);
   if (!actr) return;
-
-  std::lock_guard<std::mutex> lock(send_mtx_);
   actr->SetMitParam(param);
 }
 
-void SpiDevice::SetMitCmd(const std::string& name, float pos, float vel, float effort, float kp,
-                          float kd) {
-  auto actr = GetActuator(name);
-  if (!actr) return;
-  
-  spi_manager::CanFrame frame;
-  std::lock_guard<std::mutex> lock(send_mtx_);
-  
-  actr->SetMitCmd(pos, vel, effort, kp, kd);
-  frame.can_id = actr->GetCanId();
-  memcpy(frame.data, send_buf_.data, 8);
-  
-  // Thêm vào queue thay vì ghi đè
-  std::lock_guard<std::mutex> queue_lock(queue_mtx_);
-  send_queue_.push(frame);
-                            
 }
-
-}  // namespace xyber
