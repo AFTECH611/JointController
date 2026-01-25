@@ -331,7 +331,7 @@ def set_motion_enable(spibus, cs, motorID):  #motorID
     arbitration_id = 0x0300fd00
     arbitration_id = arbitration_id + motorID
     data = [0 for i in range(8)] 
-
+    print("ID of enable", hex(arbitration_id))
     (state,rx_data) = send_extended_frame_main(spibus, cs, arbitration_id, data)
 
     if state == 0:

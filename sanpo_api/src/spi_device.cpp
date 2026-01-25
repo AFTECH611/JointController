@@ -133,14 +133,15 @@ bool SpiDevice::EnableActuator(const std::string& name) {
   auto actr = GetActuator(name);
   if (!actr) return false;
 
-  if (actr->GetType() == ActuatorType::Robstride_00 ||
-      actr->GetType() == ActuatorType::Robstride_02) {
-    return true;
-  }
+  // if (actr->GetType() == ActuatorType::Robstride_00 ||
+  //     actr->GetType() == ActuatorType::Robstride_02) {
+  //   return true;
+  // }
 
   {
     std::lock_guard<std::mutex> lock(send_mtx_);
-    actr->RequestState(STATE_ENABLE);
+    actr->Enable();
+    send_buf_.can_id = actr->GetCanId();
   }
 
   LOG_DEBUG("Actuator %s %d enable success.", name.c_str(), (int)actr->GetId());
@@ -161,7 +162,8 @@ bool SpiDevice::DisableActuator(const std::string& name) {
 
   {
     std::lock_guard<std::mutex> lock(send_mtx_);
-    actr->RequestState(STATE_DISABLE);
+    actr->Disable();
+    send_buf_.can_id = actr->GetCanId();
   }
 
   return true;

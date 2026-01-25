@@ -15,6 +15,7 @@
 #include "common_type.h"
 #include "internal/common_utils.h"
 #include "internal/robstride.h"
+#include <iostream>
 
 using namespace xyber;
 
@@ -37,9 +38,8 @@ void Robstride::RequestState(ActuatorState state) {
 }
 
 bool Robstride::Enable() {
-  can_id_ =
-      (ActuatorCommunicationType::TYPE_MOTOR_ENABLE << 24) | (master_id_ << 8) | id_;
-  can_id_ |= 0x80000000;  // Set RTR bit for extended ID
+  can_id_ = (ActuatorCommunicationType::TYPE_MOTOR_ENABLE << 24) | (master_id_ << 8) | id_;
+  //can_id_ |= 0x80000000;  // Set RTR bit for extended ID
   memset(send_buf_, 0, ACTUATOR_FRAME_SIZE);
   LOG_INFO("Motor %s enable command sent", name_.c_str());
   return true;
@@ -47,9 +47,8 @@ bool Robstride::Enable() {
 
 bool Robstride::Disable() {
   uint8_t clear_error = 0;
-  can_id_ =
-      (ActuatorCommunicationType::TYPE_MOTOR_ENABLE << 24) | (master_id_ << 8) | id_;
-  can_id_ |= 0x80000000;  // Set RTR bit for extended ID
+  can_id_ = (ActuatorCommunicationType::TYPE_MOTOR_ENABLE << 24) | (master_id_ << 8) | id_;
+  //can_id_ |= 0x80000000;  // Set RTR bit for extended ID
   memset(send_buf_, 0, ACTUATOR_FRAME_SIZE);
   send_buf_[0] = clear_error;
   LOG_INFO("Motor %s disable command sent", name_.c_str());
@@ -59,7 +58,7 @@ bool Robstride::Disable() {
 bool Robstride::SetZero() {
   can_id_ =
       (ActuatorCommunicationType::TYPE_SET_POS_ZERO << 24) | (master_id_ << 8) | id_;
-  can_id_ |= 0x80000000;  // Set RTR bit for extended ID
+  //can_id_ |= 0x80000000;  // Set RTR bit for extended ID
   memset(send_buf_, 0, ACTUATOR_FRAME_SIZE);
   send_buf_[0] = 1;  // Command to set current position as zero
   LOG_INFO("Motor %s set zero position command sent", name_.c_str());
@@ -106,7 +105,7 @@ float Robstride::GetPosition() {
 void Robstride::SetMitCmd(float pos, float vel, float toq, float kp, float kd) {
   can_id_ = (ActuatorCommunicationType::TYPE_MOTION_CONTROL << 24) |
                       (MitFloatToUint(toq, mit_param_.toq_min, mit_param_.toq_max, 16) << 8) | id_;
-  can_id_ |= 0x80000000;  // Set RTR bit for extended ID
+  //can_id_ |= 0x80000000;  // Set RTR bit for extended ID
 
   int pos_tmp = MitFloatToUint(pos, mit_param_.pos_min, mit_param_.pos_max, 16);
   int vel_tmp = MitFloatToUint(vel, mit_param_.vel_min, mit_param_.vel_max, 16);

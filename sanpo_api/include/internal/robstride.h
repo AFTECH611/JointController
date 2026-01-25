@@ -56,7 +56,7 @@ class Robstride : public xyber::Actuator {
  private:
   xyber::MitParam mit_param_;
   uint32_t can_id_;
-  uint8_t master_id_ = 0xFF;  // Default master ID
+  uint8_t master_id_ = 0xFD;  // Default master ID
 };
 
 }  // namespace xyber_robstride

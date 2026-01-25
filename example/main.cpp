@@ -25,6 +25,8 @@ int main() {
   controller->AttachActuator(spi1.device_name, CtrlChannel::CH1, ActuatorType::Robstride_00,
                              actuator_name, actuator_can_id);
 
+  controller->EnableAllActuator();
+
   controller->SetRealtime(80, 1);  // RT priority 80, bind to CPU 1
   bool ret = controller->Start(1000000);
   if (!ret) {
@@ -37,11 +39,12 @@ int main() {
   for (size_t i = 0; i < 100 * 30; i++) {
     // Set target position using MIT mode
     double pos_cmd = pos_begin + 2 * sin(dt);
-    controller->SetMitCmd(actuator_name, pos_cmd, 0, 0, 0.9, 0.2);
+    //controller->SetMitCmd(actuator_name, pos_cmd, 0, 0, 0.9, 0.2);
 
     // read current position
-    float pos_now = controller->GetPosition(actuator_name);
-    std::cout << "Position: Cmd " << pos_cmd << " Now " << pos_now << std::endl;
+    // float pos_now = controller->GetPosition(actuator_name);
+    // std::cout << "Position: Cmd " << pos_cmd << " Now " << pos_now << std::endl;
+    controller->EnableActuator(actuator_name);  // keep alive
 
     // phase control
     dt += 0.01;

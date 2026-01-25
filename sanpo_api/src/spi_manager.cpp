@@ -102,7 +102,7 @@ bool SpiManager::ProcessBoard(SpiNode* node) {
   node->GetTxData(can_id, tx_frame.data);
 
   // Convert to big endian
-  tx_frame.can_id = __builtin_bswap32(can_id);
+  tx_frame.can_id = can_id;
 
   // Reserved bytes
   tx_frame.reserved[0] = 0x00;
@@ -128,7 +128,7 @@ bool SpiManager::ProcessBoard(SpiNode* node) {
   }
 
   // Push RX data
-  rx_frame.can_id = __builtin_bswap32(rx_frame.can_id);
+  rx_frame.can_id = rx_frame.can_id;
   node->PushRxData(rx_frame.can_id, rx_frame.data);
 
   return true;

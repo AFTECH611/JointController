@@ -1,0 +1,68 @@
+# =========================
+# CMake generated files
+# =========================
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Makefile
+
+# Presets (local overrides)
+CMakeUserPresets.json
+
+# =========================
+# Build directories
+# (out-of-source build)
+# =========================
+build/
+build-*/
+cmake-build-*/
+out/
+
+# =========================
+# Compiled objects / binaries
+# =========================
+*.o
+*.obj
+*.lo
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# =========================
+# Debug / profiling
+# =========================
+*.dSYM/
+*.gdb
+*.gdb_history
+core
+vgcore.*
+
+# =========================
+# IDE / Editor files
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.user
+*.user.*
+*.kdev4
+*.code-workspace
+
+# =========================
+# OS generated
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs
+# =========================
+*.log
