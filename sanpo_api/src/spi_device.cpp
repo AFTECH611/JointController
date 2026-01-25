@@ -121,7 +121,7 @@ void SpiDevice::RegisterActuator(Actuator* actr) {
 
 void SpiDevice::OnDataReceived(uint32_t can_id, const uint8_t* data) {
   // Extract motor ID from CAN ID (bits 0-7)
-  uint8_t motor_id = can_id & 0xFF;
+  uint8_t motor_id = (can_id >> 8) & 0xFF;
   
   // Find actuator by motor ID
   auto it = response_map_.find(motor_id);
