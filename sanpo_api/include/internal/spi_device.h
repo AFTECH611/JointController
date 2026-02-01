@@ -1,11 +1,10 @@
-// spi_device.h
+// spi_device.h - FIXED WITH ROUND-ROBIN QUEUE
 #pragma once
-// cpp
 #include <unordered_map>
 #include <vector>
-#include <queue>
+#include <deque>  // CHANGED: Use deque for round-robin
+#include <mutex>
 
-// projects
 #include "common_type.h"
 #include "internal/actuator_base.h"
 #include "internal/spi_node.h"
@@ -22,28 +21,20 @@ class SpiDevice : public spi_manager::SpiNode {
   virtual bool Open() override;
   virtual void Close() override;
   virtual bool Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) override;
+  
+  // CRITICAL FIX: Round-robin queue management
   virtual bool HasPendingData() override {
     std::lock_guard<std::mutex> lock(queue_mtx_);
-    return !send_queue_.empty();
+    return !motor_queues_.empty() && !motor_queues_.begin()->second.empty();
   }
 
-  virtual bool GetNextTxData(uint32_t& can_id, uint8_t* data) override {
-    std::lock_guard<std::mutex> lock(queue_mtx_);
-    if (send_queue_.empty()) return false;
-    
-    auto frame = send_queue_.front();
-    send_queue_.pop();
-    can_id = frame.can_id;
-    memcpy(data, frame.data, 8);
-    return true;
-  }
+  virtual bool GetNextTxData(uint32_t& can_id, uint8_t* data) override;
 
   void RegisterActuator(Actuator* actr);
   Actuator* GetActuator(const std::string& name);
   virtual std::string GetName() override { return name_; }
   void SetChannelId(CtrlChannel ch, uint8_t id);
   
-  // Override to dispatch feedback to actuators
   virtual void OnDataReceived(uint32_t can_id, const uint8_t* data) override;
 
  public:  // Actuator Stuff
@@ -68,10 +59,8 @@ class SpiDevice : public spi_manager::SpiNode {
   virtual spi_manager::CanFrame& GetSendBuf() override { return send_buf_; }
   virtual spi_manager::CanFrame& GetRecvBuf() override { return recv_buf_; }
 
-  // Helper: Queue a command for transmission
-  void QueueCommand(uint32_t can_id, const uint8_t* data);
+  void QueueCommand(uint32_t can_id, const uint8_t* data, uint8_t motor_id);
 
-  // Configuration
   void SetSpeed(uint32_t speed_hz) { speed_hz_ = speed_hz; }
   void SetMode(uint8_t mode) { mode_ = mode; }
 
@@ -86,21 +75,25 @@ class SpiDevice : public spi_manager::SpiNode {
   std::unordered_map<std::string, Actuator*> actuator_map_;
   std::unordered_map<CtrlChannel, std::vector<Actuator*>> ctrl_channel_map_;
   
-  // Separate buffers for each actuator to avoid conflicts
   struct ActuatorBuffers {
     uint8_t send[8];
     uint8_t recv[8];
   };
   std::unordered_map<std::string, ActuatorBuffers> actuator_buffers_;
   
-  std::queue<spi_manager::CanFrame> send_queue_;
-  std::mutex queue_mtx_;
+  // ============================================================
+  // KEY FIX: Per-motor queues with round-robin scheduling
+  // This ensures Motor ID 4 doesn't starve
+  // ============================================================
+  std::unordered_map<uint8_t, std::deque<spi_manager::CanFrame>> motor_queues_;
+  std::vector<uint8_t> motor_order_;  // Round-robin order
+  size_t next_motor_idx_ = 0;
+  
+  mutable std::mutex queue_mtx_;
 
-  // Temporary buffers for SpiNode interface
   spi_manager::CanFrame send_buf_;
   spi_manager::CanFrame recv_buf_;
   
-  // Response mapping: Motor ID (uint8_t) -> actuator name
   std::unordered_map<uint8_t, std::string> response_map_;
 };
 

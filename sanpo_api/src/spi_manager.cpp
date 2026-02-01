@@ -1,4 +1,4 @@
-// spi_manager.cpp
+// spi_manager.cpp - FIXED VERSION
 #include "internal/spi_manager.h"
 #include <chrono>
 #include <cstring>
@@ -66,7 +66,6 @@ void SpiManager::Stop() {
     node->Close();
     delete node;
   }
-  // nodes_map_.clear();
   LOG_INFO("SpiManager stopped");
 }
 
@@ -80,6 +79,10 @@ void SpiManager::WorkLoop() {
   auto next_cycle = std::chrono::steady_clock::now();
 
   while (is_running_) {
+    // ============================================================
+    // KEY FIX: Process ALL devices in PARALLEL per cycle
+    // This ensures Motor ID 4 on both CS pins gets equal treatment
+    // ============================================================
     for (const auto& [id, node] : nodes_map_) {
       ProcessBoard(node);
     }
@@ -91,112 +94,61 @@ void SpiManager::WorkLoop() {
   LOG_INFO("SPI WorkLoop stopped");
 }
 
-void DumpSpiCanFrame(const spi_protocol::SpiCanFrame& f) {
-  std::cout << "===== SpiCanFrame Dump =====" << std::endl;
-
-  std::cout << "Header: ";
-  for (int i = 0; i < 2; ++i) {
-    std::cout << "0x"
-              << std::hex
-              << static_cast<int>(f.header[i])
-              << " ";
-  }
-  std::cout << std::dec << std::endl;
-
-  std::cout << "CAN ID (raw BE): 0x"
-            << std::hex
-            << std::setw(8)
-            << std::setfill('0')
-            << f.can_id
-            << std::dec
-            << std::endl;
-
-  std::cout << "Data: ";
-  for (int i = 0; i < 8; ++i) {
-    std::cout << std::hex
-              << std::setw(2)
-              << std::setfill('0')
-              << static_cast<int>(f.data[i])
-              << " ";
-  }
-  std::cout << std::dec << std::endl;
-
-  std::cout << "Footer: ";
-  for (int i = 0; i < 2; ++i) {
-    std::cout << std::hex
-              << static_cast<int>(f.footer[i])
-              << " ";
-  }
-  std::cout << std::dec << std::endl;
-
-  std::cout << "Reserved: ";
-  for (int i = 0; i < 4; ++i) {
-    std::cout << std::hex
-              << static_cast<int>(f.reserved[i])
-              << " ";
-  }
-  std::cout << std::dec << std::endl;
-
-  std::cout << "CRC8: 0x"
-            << std::hex
-            << static_cast<int>(f.crc)
-            << std::dec
-            << std::endl;
-
-  std::cout << "--------------------------------" << std::endl;
-
-}
-
+// ============================================================
+// CRITICAL FIX: Process ONE command per motor per cycle
+// Instead of draining queue, we round-robin across motors
+// ============================================================
 bool SpiManager::ProcessBoard(SpiNode* node) {
-  // Process ALL pending commands in queue each cycle
-  int processed = 0;
-  const int MAX_PER_CYCLE = 10;  // Limit to prevent blocking
+  // CHANGED: Process exactly ONE frame per cycle
+  // This ensures all motors get equal update rate
   
-  while (node->HasPendingData() && processed < MAX_PER_CYCLE) {
-    spi_protocol::SpiCanFrame tx_frame;
-    memset(&tx_frame, 0, sizeof(tx_frame));
-    
-    // Build TX frame
-    memcpy(tx_frame.header, spi_protocol::FRAME_HEADER, 2);
-    memcpy(tx_frame.footer, spi_protocol::FRAME_FOOTER, 2);
-    
-    uint32_t can_id;
-    if (!node->GetNextTxData(can_id, tx_frame.data)) break;
-    
-    // Convert CAN ID to big-endian for SPI transmission
-    tx_frame.can_id = __builtin_bswap32(can_id);
-    tx_frame.reserved[3] = 0x10;
-    tx_frame.crc = crc_calculator_.Calculate((uint8_t*)&tx_frame, 
-                                             spi_protocol::SPI_FRAME_SIZE - 1);
-    
-    // Perform SPI transfer
-    spi_protocol::SpiCanFrame rx_frame;
-    if (!node->Transfer((uint8_t*)&tx_frame, (uint8_t*)&rx_frame, 
-                        spi_protocol::SPI_FRAME_SIZE)) {
-      LOG_ERROR("SPI transfer failed for node %s", node->GetName().c_str());
-      continue;
-    }
-    
-    // Verify response header and parse feedback
-    if (memcmp(rx_frame.header, spi_protocol::FRAME_HEADER, 2) == 0) {
-      // Convert CAN ID back to host byte order
-      uint32_t rx_can_id = __builtin_bswap32(rx_frame.can_id);
-      
-      // Push received data to node (this will trigger ParseFeedback via OnDataReceived)
-      node->PushRxData(rx_can_id, rx_frame.data);
-      
-      LOG_DEBUG("RX from %s: CAN ID 0x%08X, Data: %02X %02X %02X %02X %02X %02X %02X %02X",
-                node->GetName().c_str(), rx_can_id,
-                rx_frame.data[0], rx_frame.data[1], rx_frame.data[2], rx_frame.data[3],
-                rx_frame.data[4], rx_frame.data[5], rx_frame.data[6], rx_frame.data[7]);
-    } else {
-      LOG_WARN("Invalid frame header received from %s", node->GetName().c_str());
-    }
-    
-    processed++;
+  if (!node->HasPendingData()) {
+    return false;  // No data to send
+  }
+
+  spi_protocol::SpiCanFrame tx_frame;
+  memset(&tx_frame, 0, sizeof(tx_frame));
+  
+  // Build TX frame
+  memcpy(tx_frame.header, spi_protocol::FRAME_HEADER, 2);
+  memcpy(tx_frame.footer, spi_protocol::FRAME_FOOTER, 2);
+  
+  uint32_t can_id;
+  if (!node->GetNextTxData(can_id, tx_frame.data)) {
+    return false;
   }
   
-  return processed > 0;
+  // Convert CAN ID to big-endian for SPI transmission
+  tx_frame.can_id = __builtin_bswap32(can_id);
+  tx_frame.reserved[3] = 0x10;
+  tx_frame.crc = crc_calculator_.Calculate((uint8_t*)&tx_frame, 
+                                           spi_protocol::SPI_FRAME_SIZE - 1);
+  
+  // Perform SPI transfer
+  spi_protocol::SpiCanFrame rx_frame;
+  if (!node->Transfer((uint8_t*)&tx_frame, (uint8_t*)&rx_frame, 
+                      spi_protocol::SPI_FRAME_SIZE)) {
+    LOG_ERROR("SPI transfer failed for node %s", node->GetName().c_str());
+    return false;
+  }
+  
+  // Verify response header and parse feedback
+  if (memcmp(rx_frame.header, spi_protocol::FRAME_HEADER, 2) == 0) {
+    // Convert CAN ID back to host byte order
+    uint32_t rx_can_id = __builtin_bswap32(rx_frame.can_id);
+    
+    // Push received data to node (this will trigger ParseFeedback via OnDataReceived)
+    node->PushRxData(rx_can_id, rx_frame.data);
+    
+    LOG_DEBUG("RX from %s: CAN ID 0x%08X, Data: %02X %02X %02X %02X %02X %02X %02X %02X",
+              node->GetName().c_str(), rx_can_id,
+              rx_frame.data[0], rx_frame.data[1], rx_frame.data[2], rx_frame.data[3],
+              rx_frame.data[4], rx_frame.data[5], rx_frame.data[6], rx_frame.data[7]);
+  } else {
+    LOG_WARN("Invalid frame header received from %s", node->GetName().c_str());
+  }
+  
+  return true;
 }
 
 }  // namespace spi_manager
