@@ -1,9 +1,10 @@
-// spi_device.h - FIXED WITH ROUND-ROBIN QUEUE
+// spi_device.h - WITH BATCH MODE SUPPORT
 #pragma once
 #include <unordered_map>
 #include <vector>
-#include <deque>  // CHANGED: Use deque for round-robin
+#include <deque>
 #include <mutex>
+#include <chrono>
 
 #include "common_type.h"
 #include "internal/actuator_base.h"
@@ -22,13 +23,24 @@ class SpiDevice : public spi_manager::SpiNode {
   virtual void Close() override;
   virtual bool Transfer(const uint8_t* tx_data, uint8_t* rx_data, size_t len) override;
   
-  // CRITICAL FIX: Round-robin queue management
   virtual bool HasPendingData() override {
     std::lock_guard<std::mutex> lock(queue_mtx_);
     return !motor_queues_.empty() && !motor_queues_.begin()->second.empty();
   }
 
   virtual bool GetNextTxData(uint32_t& can_id, uint8_t* data) override;
+
+  // ============================================================
+  // BATCH MODE: Send all motors in one burst (ultra-low latency)
+  // ============================================================
+  struct BatchResult {
+    uint8_t motors_sent;
+    uint64_t total_time_us;
+    std::vector<uint8_t> failed_motors;
+  };
+  
+  BatchResult SendBatch();  // Send all pending motors
+  BatchResult SendBatchForMotors(const std::vector<uint8_t>& motor_ids);
 
   void RegisterActuator(Actuator* actr);
   Actuator* GetActuator(const std::string& name);
@@ -37,7 +49,7 @@ class SpiDevice : public spi_manager::SpiNode {
   
   virtual void OnDataReceived(uint32_t can_id, const uint8_t* data) override;
 
- public:  // Actuator Stuff
+ public:  // Actuator API
   bool EnableAllActuator();
   bool EnableActuator(const std::string& name);
   bool DisableAllActuator();
@@ -60,7 +72,6 @@ class SpiDevice : public spi_manager::SpiNode {
   virtual spi_manager::CanFrame& GetRecvBuf() override { return recv_buf_; }
 
   void QueueCommand(uint32_t can_id, const uint8_t* data, uint8_t motor_id);
-
   void SetSpeed(uint32_t speed_hz) { speed_hz_ = speed_hz; }
   void SetMode(uint8_t mode) { mode_ = mode; }
 
@@ -81,12 +92,9 @@ class SpiDevice : public spi_manager::SpiNode {
   };
   std::unordered_map<std::string, ActuatorBuffers> actuator_buffers_;
   
-  // ============================================================
-  // KEY FIX: Per-motor queues with round-robin scheduling
-  // This ensures Motor ID 4 doesn't starve
-  // ============================================================
+  // Per-motor round-robin queues
   std::unordered_map<uint8_t, std::deque<spi_manager::CanFrame>> motor_queues_;
-  std::vector<uint8_t> motor_order_;  // Round-robin order
+  std::vector<uint8_t> motor_order_;
   size_t next_motor_idx_ = 0;
   
   mutable std::mutex queue_mtx_;

@@ -1,4 +1,4 @@
-// spi_manager.h
+// spi_manager.h - OPTIMIZED DUAL-THREAD VERSION
 #pragma once
 #include <atomic>
 #include <thread>
@@ -11,8 +11,8 @@ namespace spi_manager {
 
 struct SpiConfig {
   uint64_t cycle_time_ns = 1000000;  // 1ms default
-  int rt_priority = -1;              // No RT by default
-  int bind_cpu = -1;                 // No CPU binding
+  int rt_priority = -1;
+  int bind_cpu = -1;
 };
 
 class SpiManager {
@@ -20,27 +20,44 @@ class SpiManager {
   explicit SpiManager();
   virtual ~SpiManager();
 
-  // Register spine boards
   void RegisterDevice(SpiNode* node);
-
-  // Start/Stop realtime loop
+  
   bool Start(SpiConfig cfg);
   void Stop();
 
   bool IsRunning() const { return is_running_; }
 
  private:
-  // Realtime communication loop
-  void WorkLoop();
-
-  // Process one spi device
+  // ============================================================
+  // OPTIMIZATION: Per-device thread for parallel processing
+  // ============================================================
+  struct DeviceThread {
+    std::thread thread;
+    std::atomic<bool> running{false};
+    SpiNode* node;
+    uint64_t cycle_time_ns;
+    int rt_priority;
+    int bind_cpu;
+    std::string name;
+    
+    // Performance tracking
+    uint64_t cycle_count{0};
+    uint64_t transfer_errors{0};
+  };
+  
+  // Worker loop for each device
+  void DeviceWorkerLoop(DeviceThread* dev_thread);
+  
+  // Process one device
   bool ProcessBoard(SpiNode* board);
 
-  // Thread control
-  std::thread work_thread_;
+  // Device threads (one per SPI CS)
+  std::unordered_map<std::string, DeviceThread> device_threads_;
+  
+  // Global control
   std::atomic<bool> is_running_{false};
-
   SpiConfig cfg_;
+  
   spi_protocol::CRC8 crc_calculator_;
   std::unordered_map<std::string, SpiNode*> nodes_map_;
 };
