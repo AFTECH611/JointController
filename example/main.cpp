@@ -14,13 +14,17 @@ int main() {
   controller->CreateSpiDevice("right_leg", 0, 1);  // /dev/spidev0.1
   
   // Attach actuators to FIRST SPI device
-  controller->AttachActuator("left_leg", CtrlChannel::CH1, 
-                            ActuatorType::Robstride_00, "left_knee", 127);
+  controller->AttachActuator("left_leg", CtrlChannel::CH1, ActuatorType::Robstride_00, "hip_roll_left", 1);
+  controller->AttachActuator("left_leg", CtrlChannel::CH1, ActuatorType::Robstride_00, "hip_pitch_left", 2);
+  controller->AttachActuator("left_leg", CtrlChannel::CH1, ActuatorType::Robstride_00, "knee_left", 3);
+  controller->AttachActuator("left_leg", CtrlChannel::CH1, ActuatorType::Robstride_00, "ankle_left", 4 );
   
   // Attach actuators to SECOND SPI device
-  controller->AttachActuator("right_leg", CtrlChannel::CH1, 
-                            ActuatorType::Robstride_00, "right_knee", 127);
-
+  controller->AttachActuator("right_leg", CtrlChannel::CH1, ActuatorType::Robstride_00, "hip_roll_right", 1);
+  controller->AttachActuator("right_leg", CtrlChannel::CH1, ActuatorType::Robstride_00, "hip_pitch_right", 2);
+  controller->AttachActuator("right_leg", CtrlChannel::CH1, ActuatorType::Robstride_00, "knee_right", 3);
+  controller->AttachActuator("right_leg", CtrlChannel::CH1, ActuatorType::Robstride_00, "ankle_right", 4);
+                            
   
 
   controller->SetRealtime(80, 1);
@@ -38,10 +42,16 @@ int main() {
     double pos_cmd = 2 * sin(dt);
     
     // Control left leg
-    controller->SetMitCmd("left_knee", pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd("hip_roll_left", pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd("hip_pitch_left", pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd("knee_left", pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd("ankle_left", pos_cmd, 0, 0, 0.9, 0.2);
     
     // Control right leg
-    controller->SetMitCmd("right_knee", -pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd("hip_roll_right", -pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd("hip_pitch_right", -pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd("knee_right", -pos_cmd, 0, 0, 0.9, 0.2);
+    controller->SetMitCmd("ankle_right", -pos_cmd, 0, 0, 0.9, 0.2);
     
     // Read feedback
     float left_pos = controller->GetPosition("left_knee");
